@@ -5,6 +5,8 @@
 const int DataPin = 6;
 const int IRQpin =  5;  // Teensy-LC can't use 0 or 1, at least. 
 
+const int ledPin = 13;
+
 // State machine tables
 uint16_t keyFSM[4][256] = {
   // STATE 0
@@ -166,21 +168,28 @@ void setup() {
   modifierKeys[0x6] = (MODIFIERKEY_RIGHT_ALT   & 0xFF); // KEY_RALT
   modifierKeys[0x7] = (MODIFIERKEY_RIGHT_CTRL  & 0xFF); // KEY_RGUI (swapped for RCTRL)
 
+  pinMode(ledPin, OUTPUT);
+
+  digitalWrite(ledPin, HIGH);
+
   delay(1000);
+  digitalWrite(ledPin, LOW);
+
   keyboard.begin(DataPin, IRQpin);
-  Serial.begin(9600);
-  Serial.println("Keyboard Test:");
+
+  // Serial.begin(9600);
+  // Serial.println("Keyboard Test:");
 }
 
-void PrintHex8(uint8_t data) {
-  if (data < 0x10) {
-    Serial.print("0");
-  }
+// void PrintHex8(uint8_t data) {
+//   if (data < 0x10) {
+//     Serial.print("0");
+//   }
   
-  Serial.print(data, HEX); 
+//   Serial.print(data, HEX); 
 
-  Keyboard.set_modifier(0);
-}
+//   Keyboard.set_modifier(0);
+// }
 
 int lastStart = 0;
 uint16_t state = 0;
@@ -215,10 +224,11 @@ void loop() {
 
     if ((now - lastStart) > 1000) {
       lastStart = 0;
-      Serial.println("");
+      // Serial.println("");
 
       // Let's assume that we're well and truly reset here.
       state = 0;
+      digitalWrite(ledPin, LOW);
     }
   }
   
@@ -226,9 +236,11 @@ void loop() {
     uint8_t code = keyboard.readScanCode();
     uint8_t usbCode = 0;
 
-    Serial.print(state);
-    Serial.print("-");
-    PrintHex8(code);
+    // Serial.print(state);
+    // Serial.print("-");
+    // PrintHex8(code);
+
+    digitalWrite(ledPin, HIGH);
     lastStart = millis();
 
     uint16_t next = nextState(state, code);
@@ -255,9 +267,9 @@ void loop() {
         }
       }
 
-      Serial.print(" MAKE ");
-      PrintHex8(usbCode);
-      Serial.println("");
+      // Serial.print(" MAKE ");
+      // PrintHex8(usbCode);
+      // Serial.println("");
       state = 0;
 
       sendNow = 1;
@@ -294,34 +306,34 @@ void loop() {
         j++;
       }
 
-      Serial.print(" BREAK ");
-      PrintHex8(usbCode);
-      Serial.println("");
+      // Serial.print(" BREAK ");
+      // PrintHex8(usbCode);
+      // Serial.println("");
       state = 0;
 
       sendNow = 1;
     }
     else {
       state = next;
-      Serial.print(">");
-      Serial.print(state);
-      Serial.print(" ");
+      // Serial.print(">");
+      // Serial.print(state);
+      // Serial.print(" ");
     }
 
     if (sendNow) {
-      Serial.print("SEND ");
-      PrintHex8(modifiersPressed);
-      Serial.print(":");
+      // Serial.print("SEND ");
+      // PrintHex8(modifiersPressed);
+      // Serial.print(":");
 
-      for (int i = 0; i < 6; i++) {
-        PrintHex8(keysPressed[i]);
+      // for (int i = 0; i < 6; i++) {
+      //   PrintHex8(keysPressed[i]);
 
-        if (i < 5) {
-          Serial.print(",");
-        }
-      }
+      //   if (i < 5) {
+      //     Serial.print(",");
+      //   }
+      // }
 
-      Serial.println("");
+      // Serial.println("");
 
       Keyboard.set_modifier(modifiersPressed);
 
@@ -335,5 +347,3 @@ void loop() {
     }
   }
 }
-
-
