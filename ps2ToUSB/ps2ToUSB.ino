@@ -172,6 +172,8 @@ long oldVolumePos = -999;
 const int pinPlayPause = 26;
 Bounce btnPlayPause = Bounce(pinPlayPause, 5);
 
+const uint8_t MEDIA_MODS = (MODIFIERKEY_LEFT_CTRL | MODIFIERKEY_LEFT_ALT) & 0xFF;
+
 void setup() {
   modifierKeys[0x0] = (MODIFIERKEY_LEFT_CTRL   & 0xFF); // KEY_LCTRL
   modifierKeys[0x1] = (MODIFIERKEY_LEFT_SHIFT  & 0xFF); // KEY_LSHIFT
@@ -193,7 +195,7 @@ void setup() {
   keyboard.begin(DataPin, IRQpin);
 
   // Serial.begin(9600);
-  // Serial.println("Keyboard Test:");
+  // Serial.println("Keyboard Start");
 }
 
 // void PrintHex8(uint8_t data) {
@@ -203,7 +205,7 @@ void setup() {
   
 //   Serial.print(data, HEX); 
 
-//   Keyboard.set_modifier(0);
+//   // Keyboard.set_modifier(0);
 // }
 
 int lastStart = 0;
@@ -233,6 +235,58 @@ uint16_t nextState(uint16_t state, uint8_t code) {
     }
 }
 
+void mediaSend(uint16_t keyToSend, uint8_t modifiersPressed) {
+  // Send these with no modifiers.
+  Serial.print("-> MEDIA ");
+  Serial.print(keyToSend, HEX);
+  Serial.print(" (mods ");
+  Serial.print(modifiersPressed, HEX);
+  Serial.println(")");
+
+  // Serious hackery here. The _keyboard_ doesn't actually send the modifier
+  // bits with the media keys, but apparently the Mac _does_ keep track of it.
+  // So we release all keys before sending the media key.
+
+  Keyboard.releaseAll();
+  Keyboard.press(keyToSend);
+  Keyboard.release(keyToSend);
+  Keyboard.set_modifier(modifiersPressed);
+}
+
+uint16_t mediaKey(uint8_t modifiersPressed, uint8_t usbCode, uint8_t isMake) {
+  // Serial.println("MEDIAKEY ");
+  // Serial.print8(modifiersPressed);
+  // Serial.print(",");
+  // Serial.print8(usbCode);
+  // Serial.print(",");
+  // Serial.print(isMake ? "M" : "B")
+  // Serial.print(": ");
+
+  if (modifiersPressed != MEDIA_MODS) {
+    // Serial.print(" (not media)");
+    return 0;
+  }
+
+  uint16_t keyToSend = 0;
+
+  switch (usbCode) {
+    case (KEY_LEFT & 0xFF):  keyToSend = KEY_MEDIA_PREV_TRACK; break;
+    case (KEY_RIGHT & 0xFF): keyToSend = KEY_MEDIA_NEXT_TRACK; break;
+    case (KEY_UP & 0xFF):    keyToSend = KEY_MEDIA_VOLUME_INC; break;
+    case (KEY_DOWN & 0xFF):  keyToSend = KEY_MEDIA_VOLUME_DEC; break;
+    case (KEY_SPACE & 0xFF): keyToSend = KEY_MEDIA_PLAY_PAUSE; break;
+    default:                 keyToSend = 0;                    break;
+  }
+
+  if (isMake && keyToSend) {
+    mediaSend(keyToSend, modifiersPressed);
+  }
+
+  // Serial.println("");
+
+  return keyToSend;
+}
+
 void loop() {
   long newVolumePos = knobVolume.read();
   
@@ -240,14 +294,12 @@ void loop() {
     long delta = newVolumePos - oldVolumePos;
 
     if (delta < -10) {
-      Keyboard.press(KEY_MEDIA_VOLUME_DEC);
-      Keyboard.release(KEY_MEDIA_VOLUME_DEC);
+      mediaSend(KEY_MEDIA_VOLUME_DEC, modifiersPressed);
       oldVolumePos = newVolumePos;
     }
 
     if (delta > 10) {
-      Keyboard.press(KEY_MEDIA_VOLUME_INC);
-      Keyboard.release(KEY_MEDIA_VOLUME_INC);
+      mediaSend(KEY_MEDIA_VOLUME_INC, modifiersPressed);
       oldVolumePos = newVolumePos;
     }  
   }
@@ -256,8 +308,7 @@ void loop() {
   btnPlayPause.update();
  
   if (btnPlayPause.fallingEdge()) {
-    Keyboard.press(KEY_MEDIA_PLAY_PAUSE);
-    Keyboard.release(KEY_MEDIA_PLAY_PAUSE);  
+    mediaSend(KEY_MEDIA_PLAY_PAUSE, modifiersPressed);
   }
 
   if (lastStart) {
@@ -286,73 +337,84 @@ void loop() {
 
     uint16_t next = nextState(state, code);
     bool sendNow = 0;
+    // bool isModifier = 0;
 
     // Is this a MAKE code?
     if (next & 0x0100) {
       usbCode = next & 0xFF;
 
+      // Serial.print("MAKE ");
+      // PrintHex8(usbCode);
+
+      state = 0;
+
       if (next & 0x0400) {
         // This is a modifier.
         modifiersPressed |= modifierKeys[usbCode & 0x0F];
+        // isModifier = 1;
+        // Serial.print(" (mod)");
+        sendNow = 1;
       }
 
-      for (int i = 0; i < 6; i++) {
-        if (keysPressed[i] == 0) {
-          // Add the new key.
-          keysPressed[i] = usbCode;
-          break;
+      if (!mediaKey(modifiersPressed, usbCode, 1)) {
+        for (int i = 0; i < 6; i++) {
+          if (keysPressed[i] == 0) {
+            // Add the new key.
+            keysPressed[i] = usbCode;
+            break;
+          }
+          else if (keysPressed[i] == usbCode) {
+            // Already there.
+            break;
+          }
         }
-        else if (keysPressed[i] == usbCode) {
-          // Already there.
-          break;
-        }
+
+        sendNow = 1;
       }
-
-      // Serial.print(" MAKE ");
-      // PrintHex8(usbCode);
-      // Serial.println("");
-      state = 0;
-
-      sendNow = 1;
     }
     else if (next & 0x200) {
       // BREAK code.
       usbCode = next & 0xFF;
 
+      // Serial.print("BREAK ");
+      // PrintHex8(usbCode);
+
+      state = 0;
+
       if (next & 0x0400) {
         // This is a modifier.
         modifiersPressed &= ~(modifierKeys[usbCode & 0x0F]);
+        // isModifier = 1;
+        // Serial.print(" (mod)");
+        sendNow = 1;
       }
 
-      int i = 0;
-      int j = 0;
+      if (!mediaKey(modifiersPressed, usbCode, 0)) {
+        int i = 0;
+        int j = 0;
 
-      while (i < 6) {
-        if (keysPressed[i] == 0) {
-          break;
+        while (i < 6) {
+          if (keysPressed[i] == 0) {
+            break;
+          }
+          else if (keysPressed[i] != usbCode) {
+            j++;
+          }
+
+          i++;
+
+          if (i != j) {
+            keysPressed[j] = keysPressed[i];
+          }
         }
-        else if (keysPressed[i] != usbCode) {
+
+        while (j < 6) {
+          keysPressed[j] = 0;
           j++;
         }
 
-        i++;
-
-        if (i != j) {
-          keysPressed[j] = keysPressed[i];
-        }
+        sendNow = 1;
       }
-
-      while (j < 6) {
-        keysPressed[j] = 0;
-        j++;
-      }
-
-      // Serial.print(" BREAK ");
-      // PrintHex8(usbCode);
-      // Serial.println("");
-      state = 0;
-
-      sendNow = 1;
     }
     else {
       state = next;
@@ -362,7 +424,7 @@ void loop() {
     }
 
     if (sendNow) {
-      // Serial.print("SEND ");
+      // Serial.print("-> ");
       // PrintHex8(modifiersPressed);
       // Serial.print(":");
 
