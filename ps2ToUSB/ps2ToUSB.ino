@@ -8,7 +8,7 @@ const int IRQpin =  5;  // Teensy-LC can't use 0 or 1, at least.
 const int ledPin = 13;
 
 // State machine tables
-uint16_t keyFSM[4][256] = {
+static uint16_t keyFSM[4][256] = {
   // STATE 0
   {
     /* 0x00 - 0x07 */ 0x0000, 0x0142, 0x0000, 0x013E, 0x013C, 0x013A, 0x013B, 0x0145,
