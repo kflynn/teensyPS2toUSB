@@ -1,5 +1,10 @@
-/*  PS2Keyboard to USB */
-   
+/* Debounce library */
+#include <Bounce.h>
+
+/* Rotary encoder library */
+#include <Encoder.h>
+
+/* PS2Keyboard to USB */
 #include <PS2Keyboard.h>
 
 const int DataPin = 6;
@@ -156,7 +161,16 @@ static uint16_t keyFSM[4][256] = {
 
 uint8_t modifierKeys[8] = { 0 };
 
+/* PS/2 keyboard object */
 PS2Keyboard keyboard;
+
+/* Rotary encoder for media volume */
+Encoder knobVolume(11, 12);
+long oldVolumePos = -999;
+
+/* Play/Pause button */
+const int pinPlayPause = 26;
+Bounce btnPlayPause = Bounce(pinPlayPause, 5);
 
 void setup() {
   modifierKeys[0x0] = (MODIFIERKEY_LEFT_CTRL   & 0xFF); // KEY_LCTRL
@@ -168,6 +182,7 @@ void setup() {
   modifierKeys[0x6] = (MODIFIERKEY_RIGHT_ALT   & 0xFF); // KEY_RALT
   modifierKeys[0x7] = (MODIFIERKEY_RIGHT_CTRL  & 0xFF); // KEY_RGUI (swapped for RCTRL)
 
+  pinMode(pinPlayPause, INPUT_PULLDOWN);
   pinMode(ledPin, OUTPUT);
 
   digitalWrite(ledPin, HIGH);
@@ -219,6 +234,32 @@ uint16_t nextState(uint16_t state, uint8_t code) {
 }
 
 void loop() {
+  long newVolumePos = knobVolume.read();
+  
+  if (newVolumePos != oldVolumePos) {
+    long delta = newVolumePos - oldVolumePos;
+
+    if (delta < -10) {
+      Keyboard.press(KEY_MEDIA_VOLUME_DEC);
+      Keyboard.release(KEY_MEDIA_VOLUME_DEC);
+      oldVolumePos = newVolumePos;
+    }
+
+    if (delta > 10) {
+      Keyboard.press(KEY_MEDIA_VOLUME_INC);
+      Keyboard.release(KEY_MEDIA_VOLUME_INC);
+      oldVolumePos = newVolumePos;
+    }  
+  }
+
+  // Update the debouncer
+  btnPlayPause.update();
+ 
+  if (btnPlayPause.fallingEdge()) {
+    Keyboard.press(KEY_MEDIA_PLAY_PAUSE);
+    Keyboard.release(KEY_MEDIA_PLAY_PAUSE);  
+  }
+
   if (lastStart) {
     int now = millis();
 
